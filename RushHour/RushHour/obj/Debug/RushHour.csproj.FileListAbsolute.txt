@@ -4,3 +4,9 @@ C:\Users\Judan\Desktop\Concurrency\RushHour\RushHour\RushHour\bin\Debug\RushHour
 C:\Users\Judan\Desktop\Concurrency\RushHour\RushHour\RushHour\obj\Debug\RushHour.csprojResolveAssemblyReference.cache
 C:\Users\Judan\Desktop\Concurrency\RushHour\RushHour\RushHour\obj\Debug\RushHour.exe
 C:\Users\Judan\Desktop\Concurrency\RushHour\RushHour\RushHour\obj\Debug\RushHour.pdb
+C:\Users\Oscar\Documents\Visual Studio 2013\Projects\RushHour\RushHour\RushHour\bin\Debug\RushHour.exe.config
+C:\Users\Oscar\Documents\Visual Studio 2013\Projects\RushHour\RushHour\RushHour\obj\Debug\RushHour.exe
+C:\Users\Oscar\Documents\Visual Studio 2013\Projects\RushHour\RushHour\RushHour\obj\Debug\RushHour.pdb
+C:\Users\Oscar\Documents\Visual Studio 2013\Projects\RushHour\RushHour\RushHour\bin\Debug\RushHour.exe
+C:\Users\Oscar\Documents\Visual Studio 2013\Projects\RushHour\RushHour\RushHour\bin\Debug\RushHour.pdb
+C:\Users\Oscar\Documents\Visual Studio 2013\Projects\RushHour\RushHour\RushHour\obj\Debug\RushHour.csprojResolveAssemblyReference.cache
