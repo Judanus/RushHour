@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Collections.Concurrent;
+using System.IO;
 
 namespace RushHourSolver
 {
@@ -12,9 +13,11 @@ namespace RushHourSolver
     {
         static void Main(string[] args)
         {
+            Console.SetIn(File.OpenText("input.txt"));
 			Worker worker = new Worker ();
 			worker.doWork ();
 			Console.WriteLine (worker._foundSolution);
+            Console.SetIn(new StreamReader(Console.OpenStandardInput()));
             Console.ReadLine();
         }
 
@@ -31,11 +34,13 @@ namespace RushHourSolver
 			static Trie _visited;
 			public Solution _foundSolution;
 			static bool _solveMode;
+            private Object lockSetSolution = new Object();
+            private Object lockAddNode = new Object();
 			
 			public bool _solutionFound = false;
 			private ConcurrentQueue<Tuple<byte[], Solution>> _q;
 
-			static int _endDepth = 0;
+			static int _endDepth = int.MaxValue;
 			public int _jobs = 0;
 
 			public Worker()
@@ -51,48 +56,73 @@ namespace RushHourSolver
 				Tuple<byte[], Solution> state = (Tuple<byte[], Solution>) threadPoolContext;
 				foreach (Tuple<byte[], Solution> next in Sucessors (state))
 				{
+                    Console.WriteLine(next.Item2.ToString());
 					if (next.Item1[_targetVehicle] == _goal)
 					{
+                        //lock zetten om de 2 regels hieronder, de bool is wel atomic, maar _foundSolution niet.
 						_solutionFound = true;
-						_foundSolution = next.Item2;
+                        lock (lockSetSolution)
+                        {
+                            if (_endDepth > next.Item2.Count)
+                            {
+                                _foundSolution = next.Item2;
+                                _endDepth = next.Item2.Count;
+                            }
+                        }
 						break;
 					}
-					if (!AddNode (next.Item1))
-					{
-						_q.Enqueue (state);
-					}
+                    lock (lockAddNode)
+                    {
+                        if (!AddNode(next.Item1))
+                        {
+                            _q.Enqueue(next);
+                        }
+                    }
 				}
 				_jobs--;
 			}
 
 			internal void doWork ()
 			{
+                _foundSolution = new NoSolution();
+                _q.Enqueue(Tuple.Create(_vehicleStartPos, (Solution)new EmptySolution()));
+                AddNode(_vehicleStartPos);
+
 				// Do BFS
-				while (_q.Count > 0 && !_solutionFound)
+				while ((_q.Count > 0 || _jobs > 0) && !_solutionFound)
 				{
-					_jobs++;
-					Tuple<byte[], Solution> currentState;
-					if (_q.TryDequeue (out currentState))
-					{
-						ThreadPool.QueueUserWorkItem (ThreadPoolCallback, currentState);
-					}
+                    while (_q.Count == 0 && _jobs!=0) { }
+                    if (_q.Count != 0)
+                    {
+                        _jobs++;
+                        Tuple<byte[], Solution> currentState;
+                        if (_q.TryDequeue(out currentState))
+                        {
+                            Console.WriteLine(currentState.Item2.ToString());
+                            ThreadPool.QueueUserWorkItem(ThreadPoolCallback, currentState);
+                        }
+                    }
 				}
 
 				// Alle threads klaar && queue is leeg
 				// queue.dequeue en check of depth < current solution depth => in thread pool
 				// als alle threads klaar en qqueue is leeg 
 				while (_q.Count > 0 || _jobs > 0)
-				{
+                {
+                    while (_q.Count == 0 && _jobs != 0) { }
 					// blijf de queue leeg werken, en alleen nieuwe jobs toevoegen als depth < currentSolutionDepth
-					Tuple<byte[], Solution> currentState;
-					if (_q.TryDequeue (out currentState))
-					{
-						if (currentState.Item2.Count < _endDepth)
-						{
-							_jobs++;
-							ThreadPool.QueueUserWorkItem (ThreadPoolCallback, currentState);
-						}
-					}
+                    if (_q.Count != 0)
+                    {
+                        Tuple<byte[], Solution> currentState;
+                        if (_q.TryDequeue(out currentState))
+                        {
+                            if (currentState.Item2.Count < _endDepth) //_endDepth needs to be atomic, because the check can happen here while it is being changed in a thread. It's an int, and according to documentation those are supposed to be atomic
+                            {
+                                _jobs++;
+                                ThreadPool.QueueUserWorkItem(ThreadPoolCallback, currentState);
+                            }
+                        }
+                    }
 				}
 			}
 
@@ -291,7 +321,7 @@ namespace RushHourSolver
 				}
 			}
 
-			class Solution
+			public class Solution
 			{
 				public Solution Parent { get; protected set; }
 				public bool Direction { get; protected set; }
