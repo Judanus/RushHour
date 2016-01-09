@@ -13,12 +13,12 @@ namespace RushHourSolver
     {
         static void Main(string[] args)
         {
-            Console.SetIn(File.OpenText("input.txt"));
-			Worker worker = new Worker ();
-			worker.doWork ();
-			Console.WriteLine (worker._foundSolution);
-            Console.SetIn(new StreamReader(Console.OpenStandardInput()));
-            Console.ReadLine();
+            //Console.SetIn(File.OpenText("input.txt"));
+            Worker worker = new Worker();
+            worker.doWork();
+            Console.WriteLine(worker._foundSolution/*+"solution"*/);
+            //Console.SetIn(new StreamReader(Console.OpenStandardInput()));
+            //Console.ReadLine();
         }
 
 		class Worker
@@ -35,7 +35,6 @@ namespace RushHourSolver
 			public Solution _foundSolution;
 			static bool _solveMode;
             private Object lockSetSolution = new Object();
-            private Object lockAddNode = new Object();
 			
 			public bool _solutionFound = false;
 			private ConcurrentQueue<Tuple<byte[], Solution>> _q;
@@ -56,30 +55,30 @@ namespace RushHourSolver
 				Tuple<byte[], Solution> state = (Tuple<byte[], Solution>) threadPoolContext;
 				foreach (Tuple<byte[], Solution> next in Sucessors (state))
 				{
-                    Console.WriteLine(next.Item2.ToString());
+                    //Console.WriteLine(next.Item2.ToString());
 					if (next.Item1[_targetVehicle] == _goal)
-					{
+                    {
+                        //Console.WriteLine(next.Item2.ToString()+"nylocked");
                         //lock zetten om de 2 regels hieronder, de bool is wel atomic, maar _foundSolution niet.
 						_solutionFound = true;
                         lock (lockSetSolution)
                         {
-                            if (_endDepth > next.Item2.Count)
+                            //Console.WriteLine(next.Item2.Depth);
+                            if (_endDepth > next.Item2.Depth)
                             {
                                 _foundSolution = next.Item2;
-                                _endDepth = next.Item2.Count;
+                                //Console.WriteLine(_foundSolution.ToString()+"locked");
+                                _endDepth = next.Item2.Depth;
                             }
                         }
 						break;
 					}
-                    lock (lockAddNode)
+                    if (!AddNode(next.Item1))
                     {
-                        if (!AddNode(next.Item1))
-                        {
-                            _q.Enqueue(next);
-                        }
+                        _q.Enqueue(next);
                     }
 				}
-				_jobs--;
+                Interlocked.Decrement(ref _jobs);
 			}
 
 			internal void doWork ()
@@ -94,16 +93,15 @@ namespace RushHourSolver
                     while (_q.Count == 0 && _jobs!=0) { }
                     if (_q.Count != 0)
                     {
-                        _jobs++;
+                        Interlocked.Increment(ref _jobs);
                         Tuple<byte[], Solution> currentState;
                         if (_q.TryDequeue(out currentState))
                         {
-                            Console.WriteLine(currentState.Item2.ToString());
+                            //Console.WriteLine(currentState.Item2.ToString());
                             ThreadPool.QueueUserWorkItem(ThreadPoolCallback, currentState);
                         }
                     }
 				}
-
 				// Alle threads klaar && queue is leeg
 				// queue.dequeue en check of depth < current solution depth => in thread pool
 				// als alle threads klaar en qqueue is leeg 
@@ -116,14 +114,15 @@ namespace RushHourSolver
                         Tuple<byte[], Solution> currentState;
                         if (_q.TryDequeue(out currentState))
                         {
-                            if (currentState.Item2.Count < _endDepth) //_endDepth needs to be atomic, because the check can happen here while it is being changed in a thread. It's an int, and according to documentation those are supposed to be atomic
+                            if (currentState.Item2.Depth < _endDepth-1) //_endDepth needs to be atomic, because the check can happen here while it is being changed in a thread. It's an int, and according to documentation those are supposed to be atomic
                             {
-                                _jobs++;
+                                Interlocked.Increment(ref _jobs);
                                 ThreadPool.QueueUserWorkItem(ThreadPoolCallback, currentState);
                             }
                         }
                     }
 				}
+                if (_q.Count != 0 || _jobs != 0) { Console.WriteLine("Something wrong2"); }
 			}
 
 			private static IEnumerable<Tuple<byte[], Solution>> Sucessors (Tuple<byte[], Solution> state)
@@ -329,18 +328,20 @@ namespace RushHourSolver
 				public byte Amount { get; protected set; }
 				public byte Vehicle { get; protected set; }
 				public int Count { get; protected set; }
-				public Solution () { }
+                public int Depth { get; protected set; }
+                public Solution() { }
 				public Solution appendMove (bool direction, bool forward, byte amount, byte vehicle)
 				{
 					if (!_solveMode)
-						return new Solution () { Count = this.Count + 1 };
+						return new Solution () { Count = this.Count + 1, Depth = Depth + 1 };
 					return new Solution ()
 					{
 						Parent = this,
 						Direction = direction,
 						Forward = forward,
 						Amount = amount,
-						Vehicle = vehicle
+						Vehicle = vehicle,
+                        Depth = Depth + 1
 					};
 				}
 
@@ -360,6 +361,10 @@ namespace RushHourSolver
 
 			class EmptySolution : Solution
 			{
+                public EmptySolution ()
+                {
+                    Depth = 0;
+                }
 				protected override string MakeString ()
 				{
 					return "";
