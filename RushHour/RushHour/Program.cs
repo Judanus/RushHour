@@ -6,6 +6,7 @@ using System.Text;
 using System.Threading;
 using System.Collections.Concurrent;
 using System.IO;
+using System.Diagnostics;
 
 namespace RushHourSolver
 {
@@ -16,7 +17,7 @@ namespace RushHourSolver
             //Console.SetIn(File.OpenText("input.txt"));
             Worker worker = new Worker();
             worker.doWork();
-            Console.WriteLine(worker._foundSolution/*+"solution"*/);
+            Console.WriteLine(worker._foundSolution);
             //Console.SetIn(new StreamReader(Console.OpenStandardInput()));
             //Console.ReadLine();
         }
@@ -35,9 +36,10 @@ namespace RushHourSolver
 			public Solution _foundSolution;
 			static bool _solveMode;
             private Object lockSetSolution = new Object();
+            private Object lockQueue = new Object();
 			
 			public bool _solutionFound = false;
-			private ConcurrentQueue<Tuple<byte[], Solution>> _q;
+			private Queue<Tuple<byte[], Solution>> _q;
 
 			static int _endDepth = int.MaxValue;
 			public int _jobs = 0;
@@ -45,8 +47,9 @@ namespace RushHourSolver
 			public Worker()
 			{
 				ReadInput ();
+                ThreadPool.SetMinThreads(20, 5);
 				// Create a thread-safe queue that is accessible as a class member
-				_q = new ConcurrentQueue<Tuple<byte[], Solution>> ();
+				_q = new Queue<Tuple<byte[], Solution>> ();
 			}
 
 			//Logic that gets handles per thread
@@ -55,11 +58,8 @@ namespace RushHourSolver
 				Tuple<byte[], Solution> state = (Tuple<byte[], Solution>) threadPoolContext;
 				foreach (Tuple<byte[], Solution> next in Sucessors (state))
 				{
-                    //Console.WriteLine(next.Item2.ToString());
 					if (next.Item1[_targetVehicle] == _goal)
                     {
-                        //Console.WriteLine(next.Item2.ToString()+"nylocked");
-                        //lock zetten om de 2 regels hieronder, de bool is wel atomic, maar _foundSolution niet.
 						_solutionFound = true;
                         lock (lockSetSolution)
                         {
@@ -67,7 +67,6 @@ namespace RushHourSolver
                             if (_endDepth > next.Item2.Depth)
                             {
                                 _foundSolution = next.Item2;
-                                //Console.WriteLine(_foundSolution.ToString()+"locked");
                                 _endDepth = next.Item2.Depth;
                             }
                         }
@@ -75,7 +74,10 @@ namespace RushHourSolver
 					}
                     if (!AddNode(next.Item1))
                     {
-                        _q.Enqueue(next);
+                        lock (lockQueue)
+                        {
+                            _q.Enqueue(next);
+                        }
                     }
 				}
                 Interlocked.Decrement(ref _jobs);
@@ -90,16 +92,16 @@ namespace RushHourSolver
 				// Do BFS
 				while ((_q.Count > 0 || _jobs > 0) && !_solutionFound)
 				{
-                    while (_q.Count == 0 && _jobs!=0) { }
+                    while (_q.Count == 0 && _jobs != 0 && !_solutionFound) { }
                     if (_q.Count != 0)
                     {
-                        Interlocked.Increment(ref _jobs);
                         Tuple<byte[], Solution> currentState;
-                        if (_q.TryDequeue(out currentState))
+                        lock (lockQueue)
                         {
-                            //Console.WriteLine(currentState.Item2.ToString());
-                            ThreadPool.QueueUserWorkItem(ThreadPoolCallback, currentState);
+                            currentState = _q.Dequeue();
                         }
+                        Interlocked.Increment(ref _jobs);
+                        ThreadPool.QueueUserWorkItem(ThreadPoolCallback,currentState);
                     }
 				}
 				// Alle threads klaar && queue is leeg
@@ -112,13 +114,14 @@ namespace RushHourSolver
                     if (_q.Count != 0)
                     {
                         Tuple<byte[], Solution> currentState;
-                        if (_q.TryDequeue(out currentState))
+                        lock (lockQueue)
                         {
-                            if (currentState.Item2.Depth < _endDepth-1) //_endDepth needs to be atomic, because the check can happen here while it is being changed in a thread. It's an int, and according to documentation those are supposed to be atomic
-                            {
-                                Interlocked.Increment(ref _jobs);
-                                ThreadPool.QueueUserWorkItem(ThreadPoolCallback, currentState);
-                            }
+                            currentState = _q.Dequeue();
+                        }
+                        if (currentState.Item2.Depth < _endDepth - 1) //_endDepth needs to be atomic, because the check can happen here while it is being changed in a thread. It's an int, and according to documentation those are supposed to be atomic
+                        {
+                            Interlocked.Increment(ref _jobs);
+                            ThreadPool.QueueUserWorkItem(ThreadPoolCallback, currentState);
                         }
                     }
 				}
